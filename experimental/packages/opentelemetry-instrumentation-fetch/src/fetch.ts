@@ -270,13 +270,14 @@ export class FetchInstrumentation extends InstrumentationBase<
    * @param span
    * @param spanData
    * @param response
+   * @param endTime
    */
   private _endSpan(
     span: api.Span,
     spanData: SpanData,
-    response: FetchResponse
+    response: FetchResponse,
+    endTime: api.HrTime
   ) {
-    const endTime = core.millisToHrTime(Date.now());
     const performanceEndTime = core.hrTime();
     this._addFinalSpanAttributes(span, response);
 
@@ -311,25 +312,25 @@ export class FetchInstrumentation extends InstrumentationBase<
         }
         const spanData = plugin._prepareSpanData(url);
 
-        function endSpanOnError(span: api.Span, error: FetchError) {
+        function endSpanOnError(span: api.Span, error: FetchError, endTime: api.HrTime) {
           plugin._applyAttributesAfterFetch(span, options, error);
           plugin._endSpan(span, spanData, {
             status: error.status || 0,
             statusText: error.message,
             url,
-          });
+          }, endTime);
         }
 
-        function endSpanOnSuccess(span: api.Span, response: Response) {
+        function endSpanOnSuccess(span: api.Span, response: Response, endTime: api.HrTime) {
           plugin._applyAttributesAfterFetch(span, options, response);
           if (response.status >= 200 && response.status < 400) {
-            plugin._endSpan(span, spanData, response);
+            plugin._endSpan(span, spanData, response, endTime);
           } else {
             plugin._endSpan(span, spanData, {
               status: response.status,
               statusText: response.statusText,
               url,
-            });
+            }, endTime);
           }
         }
 
@@ -339,6 +340,8 @@ export class FetchInstrumentation extends InstrumentationBase<
           response: Response
         ): void {
           try {
+            const endTime = core.millisToHrTime(Date.now());
+
             const resClone = response.clone();
             const resClone4Hook = response.clone();
             const body = resClone.body;
@@ -348,20 +351,20 @@ export class FetchInstrumentation extends InstrumentationBase<
                 reader.read().then(
                   ({ done }) => {
                     if (done) {
-                      endSpanOnSuccess(span, resClone4Hook);
+                      endSpanOnSuccess(span, resClone4Hook, endTime);
                     } else {
                       read();
                     }
                   },
                   error => {
-                    endSpanOnError(span, error);
+                    endSpanOnError(span, error, endTime);
                   }
                 );
               };
               read();
             } else {
               // some older browsers don't have .body implemented
-              endSpanOnSuccess(span, response);
+              endSpanOnSuccess(span, response, endTime);
             }
           } finally {
             resolve(response);
@@ -374,7 +377,9 @@ export class FetchInstrumentation extends InstrumentationBase<
           error: FetchError
         ) {
           try {
-            endSpanOnError(span, error);
+            const endTime = core.millisToHrTime(Date.now());
+
+            endSpanOnError(span, error, endTime);
           } finally {
             reject(error);
           }
